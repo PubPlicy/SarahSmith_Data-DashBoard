@@ -1,0 +1,330 @@
+---
+title: "Dashboards PUBPOL543"
+author: "Sarah Smith"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    social: menu
+    source_code: embed
+---
+
+```{r setup, include=FALSE}
+library(rio)
+library(ggplot2)
+library(plotly)
+library(plyr)
+library(flexdashboard)
+library(sf)
+library(magrittr)
+library(RColorBrewer)
+library(leaflet)
+library(knitr)
+
+location="https://github.com/pubpolicy/PubPolicy-543/raw/main/"
+file="gbdChildMortality_2010s.csv"
+
+linkToFile=paste0(location,file)
+
+gdb=read.csv(linkToFile)
+
+linkCSV='https://github.com/pubpolicy/PubPolicy-543/raw/main/COVID-19%20cases%20and%20testing%20by%20County.csv'
+dataCSV=read.csv(linkCSV)
+location="https://github.com/pubpolicy/PubPolicy-543/raw/main/"
+file="WA_County_Boundaries.json"
+linkToFile=paste0(location,file)
+
+
+```
+
+Static Plots
+=======================================================================
+
+Row {data-height=1500}
+-----------------------------------------------------------------------
+
+### 2010 Global Burden of Disease: I
+
+```{r, fig.width=12, fig.height=6}
+
+base= ggplot(gdb,aes(y = under5MR))  
+b1= base + geom_boxplot()+ 
+  coord_flip() 
+
+statVals<-summary(gdb$under5MR,digits = 3)[1:6]
+
+statVals=statVals%>%as.vector() 
+base= ggplot(gdb,aes(y = under5MR))  
+b1= base + geom_boxplot() 
+b1=b1 +coord_flip() + scale_y_continuous(breaks = statVals)
+
+i1=(theIQR=IQR(gdb$under5MR,na.rm = T))
+
+i2=(upperT=summary(gdb$under5MR)[[5]] + theIQR*1.5)
+
+upperT<- 143.52
+
+annotation=paste0('Threshold:',upperT)
+b1 = b1 + geom_hline(yintercept = upperT,
+                     color='black',
+                     linetype="longdash",
+                     size=2) 
+b1=b1 + annotate(geom = 'text', size=5,
+              label=annotation,
+              y = upperT+5,
+              x=0.2,
+              angle=90)
+
+b2=b1+ theme(axis.text.y = element_blank(),
+          axis.ticks.y = element_blank(),
+          axis.title.y = element_blank())
+
+
+titleText='2010 Global Burden of Disease Under 5  Mortality Rate (MR)\n'
+sourceText='Source: 2010 World Bank GBD'
+
+b3=b2 + labs(title=titleText,
+                     x =NULL, 
+                     y = NULL,
+                     caption = sourceText) 
+
+b4= b3 + theme(axis.text.x = element_text(size= 16, angle = 90, hjust = 0.5, vjust=0.5))+
+  theme(plot.title = element_text(hjust = 0.5))+
+  ylab("Under 5 MR \n (per 1,000 live births)")
+
+b5=b4 + theme(plot.title = element_text(color = "black", size = 17, face= "bold"),
+  plot.caption = element_text(color = "black", size= 12, face = "italic"))
+
+
+b6=b5+ theme(axis.title.x=element_text(size=16))
+  
+b6
+
+```
+
+### 2010 Global Burden of Disease: II
+
+```{r, fig.width=12, fig.height=6}
+
+base=ggplot(data=gdb,
+            aes(x=gbdRegion,y=under5MR))
+
+#base + geom_boxplot()  
+b1= base + geom_boxplot()
+
+titleText='2010 Global Burden of Disease Under 5 Mortality Rate (MR) by Region \n'
+sourceText='Source: World Bank GBD'
+
+b2=b1 + labs(title=titleText,
+                     x =NULL, 
+                     y = NULL,
+                     caption = sourceText) 
+
+b3= b2 + theme(axis.text.x = element_text(size=16, angle=90)) +
+  theme(plot.title = element_text(hjust = 0.5, vjust=0.5))+
+    theme(axis.text.y = element_text(size=16))+
+  ylab("Under 5 MR") +
+  xlab("Region")
+
+
+gdb$bigRegion=stringr::str_split(gdb$gbdRegion,
+                                 ",",
+                                 simplify = T)[,1]
+
+T1=table(gdb$bigRegion)
+
+base=ggplot(data=gdb,
+            aes(x=reorder(bigRegion,under5MR), 
+                y=under5MR)) 
+
+b1= base + geom_boxplot()
+b2=b1 + labs(title=titleText,
+                     x =NULL, 
+                     y = NULL,
+                     caption = sourceText) 
+b3= b2 + theme(axis.text.x = element_text(size=16, angle=90,hjust=0.95,vjust=0.2)) +
+  theme(axis.text.y = element_text(size=14)) +
+  theme(plot.title = element_text(hjust = 0.5, vjust=0.2))+
+  ylab("\n Under 5 MR \n (per 1,000 live births)") +
+  xlab("Region \n")
+
+b4= b3 + theme(
+  plot.title = element_text(color = "black", size = 17, face= "bold"),
+  plot.caption = element_text(color = "black",size = 12, face = "italic")
+)
+
+b5= b4 + scale_y_continuous(breaks=c(0,50, 100, 150, 200),
+                                   limits = c(0, 200)) +coord_flip() 
+
+b6=b5+ theme(axis.title.x=element_text(size=16), axis.title.y=element_text(size=16, vjust=1))
+
+b6
+
+```
+
+
+Row{data-height=1500}
+-----------------------------------------------------------------------
+
+### Rate of New COVID-19 Cases in Washington State 
+
+```{r, fig.height=6, fig.width=13}
+
+mapCounty=read_sf(linkToFile)
+
+mapCounty=merge(mapCounty, #map first
+                   dataCSV, 
+                   by.x='JURISDIC_2',by.y='JURLBL')
+
+names(mapCounty)[13] <- "Cases"
+
+
+base=ggplot(data=mapCounty) + geom_sf(fill='grey90',
+                                     color=NA) + theme_classic()
+
+sourceText='Source: Washington State Department of Health \n March 3rd, 2021'
+
+colMap= base + geom_sf(data=mapCounty,
+                    aes(fill= Cases),
+                       color='black') + 
+                    labs(fill=' New Cases Per 100K People',
+                     x =NULL,
+                     y = NULL,
+                     caption = sourceText)
+titleText='Rate of New COVID-19 Cases in Washington State by County \n During Prior Two Weeks'
+
+Map2=colMap + labs(title=titleText,
+                     x =NULL, 
+                     y = NULL,
+                     caption = sourceText)
+
+Map3= Map2 + theme(axis.text.x = element_text(size=15, angle = 90, hjust = 1)) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+
+Map4= Map3 + scale_fill_gradient(low = 'white',
+                             high= 'red')
+
+Map5=Map4 + theme(axis.text.y = element_blank(),
+          axis.ticks.y = element_blank(),
+          axis.title.y = element_blank())
+
+Map6= Map5 + theme(axis.text.x = element_blank(),
+      axis.ticks.x= element_blank())
+
+Map7= Map6 + theme(
+  plot.title = element_text(color = "black", size = 18, face= "bold"),
+  plot.caption = element_text(color = "black",size=14, face = "italic")
+)
+
+Map7
+
+```
+
+
+2010 Global Burden of Disease II
+=======================================================================
+
+### 2010 Global Burden of Disease: BoxPlot2
+
+```{r,fig.width=1, fig.height=7}
+
+gdb$bigRegion=stringr::str_split(gdb$gbdRegion,
+                                 ",",
+                                 simplify = T)[,1]
+
+T1=table(gdb$bigRegion)
+
+base=ggplot(data=gdb,
+            aes(x=reorder(bigRegion,under5MR), 
+                y=under5MR)) 
+
+b1= base + geom_boxplot()
+titleText='2010 Global Burden of Disease \n Under 5 Mortality Rate (MR) by Region \n \n \n'
+sourceText='Source: World Bank GBD'
+
+b2=b1 + labs(title=titleText,
+                     x =NULL, 
+                     y = NULL,
+                     caption = sourceText)
+
+b3= b2 + theme(axis.text.x = element_text(hjust=0.5,vjust=5)) +
+  theme(plot.title = element_text(hjust = 0.5, vjust=5, line=0))+
+  ylab("\n Under 5 MR \n (per 1,000 live births)") +
+  xlab("Region \n \n")
+
+
+b4= b3 + theme(
+  plot.title = element_text(color = "black", size = 15, face= "bold"))
+
+b5= b4 + scale_y_continuous(breaks=c(0,50, 100, 150, 200),
+                                   limits = c(0, 200)) +coord_flip() 
+
+
+ggplotly(b5) %>%
+  layout(title = list(text = paste0('2010 Global Burden of Disease Under 5 Mortality Rate (MR) by Region',
+                                    '<br>',
+                                    '<sup>',
+                                    'Source: 2010 World Bank GBD',
+                                    '</sup>')))
+```
+Rate of New COVID-19 Cases in WA State
+=======================================================================
+
+Row
+-----------------------------------------------------------------------
+
+### Rate of New COVID-19 Cases in Washington State 
+
+```{r, eval=TRUE,warning=FALSE,message=FALSE, fig.height=2}
+
+mapCounty=read_sf(linkToFile)
+
+mapCounty=merge(mapCounty, #map first
+                   dataCSV, 
+                   by.x='JURISDIC_2',by.y='JURLBL')
+
+
+names(mapCounty)[13] <- "Cases"
+
+
+base=ggplot(data=mapCounty) + geom_sf(fill='grey90',
+                                     color=NA) + theme_classic()
+
+colMap= base + geom_sf(data=mapCounty,
+                    aes(fill= Cases,
+                        text=paste("County:",JURISDIC_2)),
+                       color='black') +
+  labs(fill=' New Cases Per 100K People',
+                     x =NULL,
+                     y = NULL)
+
+titleText='Rate of New COVID-19 Cases in Washington State \n by County During Prior Two Weeks'
+
+Map2=colMap + labs(title=titleText,
+                     x =NULL,
+                     y = NULL)
+
+Map3= Map2 + theme(axis.text.x = element_text(angle = 90, hjust = 0,line=3)) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+Map4= Map3 + scale_fill_gradient(low = 'white',
+                             high= 'red')
+
+Map5=Map4 + theme(axis.text.y = element_blank(),
+          axis.ticks.y = element_blank(),
+          axis.title.y = element_blank())
+
+Map6= Map5 + theme(axis.text.x = element_blank(),
+      axis.ticks.x= element_blank())
+
+Map7= Map6 + theme(
+  plot.title = element_text(color = "black", size = 14, face= "bold"))
+
+ggplotly(Map7) %>%
+  layout(title = list(text = paste0('\n Rate of New COVID-19 Cases in Washington State by County During Prior Two Weeks',
+                                    '<br>',
+                                    '<sup>',
+                                    'Source: Washington State Department of Health March 3rd, 2021 ',
+                                    '</sup>')))
+
+```
